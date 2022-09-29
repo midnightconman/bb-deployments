@@ -1,0 +1,3 @@
+{
+  browser: (import 'browser.libsonnet'),
+}

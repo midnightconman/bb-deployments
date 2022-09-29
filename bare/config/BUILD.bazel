@@ -1,0 +1,17 @@
+load("@io_bazel_rules_jsonnet//jsonnet:jsonnet.bzl", "jsonnet_library")
+
+filegroup(
+    name = "jsonnet",
+    srcs = glob([
+        "**/*.libsonnet",
+        "**/*.jsonnet",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+jsonnet_library(
+    name = "config",
+    srcs = [":jsonnet"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)

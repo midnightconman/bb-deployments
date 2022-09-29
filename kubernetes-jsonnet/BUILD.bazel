@@ -1,0 +1,24 @@
+load("@io_bazel_rules_jsonnet//jsonnet:jsonnet.bzl", "jsonnet_library", "jsonnet_to_json_test")
+
+filegroup(
+    name = "jsonnet",
+    srcs = glob([
+        "**/*.libsonnet",
+        "**/*.jsonnet",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+jsonnet_library(
+    name = "kubernetes-jsonnet",
+    srcs = [":jsonnet"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = ["//bare/config"],
+)
+
+jsonnet_to_json_test(
+    name = "browser_test",
+    src = "browser_test.jsonnet",
+    deps = [":kubernetes-jsonnet"],
+)
