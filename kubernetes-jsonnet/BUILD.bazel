@@ -17,8 +17,11 @@ jsonnet_library(
     deps = ["//bare/config"],
 )
 
-jsonnet_to_json_test(
-    name = "browser_test",
-    src = "browser_test.jsonnet",
+[jsonnet_to_json_test(
+    name = "%s_test" % component,
+    src = "%s_test.jsonnet" % component,
     deps = [":kubernetes-jsonnet"],
-)
+) for component in [
+    "browser",
+    "frontend",
+]]

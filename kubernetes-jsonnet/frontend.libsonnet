@@ -1,30 +1,24 @@
-local common = import 'common.libsonnet';
+local frontend = import 'frontend.jsonnet';
 
 local defaults = {
   local defaults = self,
-  name: 'browser',
+  name: 'frontend',
   namespace: error 'must provide namespace',
   image: error 'must provide image',
   replicas: error 'must provide replicas',
   resources: {},
   ports: {
-    http: 7984,
+    grpc: 8980,
     metrics: 9980,
   },
   serviceMonitor: false,
 
-  appConfig: {
-    blobstore: common.blobstore,
-    maximumMessageSizeBytes: common.maximumMessageSizeBytes,
-    listenAddress: ':%d' % defaults.ports.http,
-    global: common.globalWithDiagnosticsHttpServer(':9984'),
-    authorizer: { allow: {} },
-  },
+  appConfig: frontend,
 
   commonLabels:: {
-    'app.kubernetes.io/name': 'browser',
+    'app.kubernetes.io/name': 'frontend',
     'app.kubernetes.io/instance': defaults.name,
-    'app.kubernetes.io/component': 'object-store-browser',
+    'app.kubernetes.io/component': 'rpc-demultiplexing',
   },
 
   podLabelSelector:: {
@@ -34,7 +28,7 @@ local defaults = {
 };
 
 function(params) {
-  local b = self,
+  local f = self,
 
   // Combine the defaults and the passed params to make the component's config.
   config:: defaults + params,
@@ -43,23 +37,23 @@ function(params) {
     apiVersion: 'v1',
     kind: 'Service',
     metadata: {
-      name: b.config.name,
-      namespace: b.config.namespace,
-      labels: b.config.commonLabels,
+      name: f.config.name,
+      namespace: f.config.namespace,
+      labels: f.config.commonLabels,
     },
     spec: {
       ports: [
         {
           assert std.isString(name),
-          assert std.isNumber(b.config.ports[name]),
+          assert std.isNumber(f.config.ports[name]),
 
           name: name,
-          port: b.config.ports[name],
-          targetPort: b.config.ports[name],
+          port: f.config.ports[name],
+          targetPort: f.config.ports[name],
         }
-        for name in std.objectFields(b.config.ports)
+        for name in std.objectFields(f.config.ports)
       ],
-      selector: b.config.podLabelSelector,
+      selector: f.config.podLabelSelector,
     },
   },
 
@@ -69,39 +63,39 @@ function(params) {
     apiVersion: 'v1',
     kind: 'ConfigMap',
     metadata: {
-      name: b.config.name,
-      namespace: b.config.namespace,
-      labels: b.config.commonLabels,
+      name: f.config.name,
+      namespace: f.config.namespace,
+      labels: f.config.commonLabels,
     },
-    data: { 'browser.jsonnet': b.config.appConfig },
+    data: {
+      'frontend.jsonnet': f.config.appConfig,
+    },
   },
 
   deployment:
     local c = {
-      name: 'browser',
-      image: b.config.image,
-      args: ['/config/%s.jsonnet' % b.config.name],
+      name: 'frontend',
+      image: f.config.image,
+      args: ['/config/%s.jsonnet' % f.config.name],
       ports: [
         { name: port.name, containerPort: port.port }
-        for port in b.service.spec.ports
+        for port in f.service.spec.ports
       ],
       livenessProbe: {
         httpGet: {
           scheme: 'HTTP',
-          // TODO(midnight): make this not rely on position
-          port: b.config.ports.metrics,
+          port: f.config.ports.metrics,
           path: '/-/healthy',
         },
       },
       readinessProbe: {
         httpGet: {
           scheme: 'HTTP',
-          // TODO(midnight): make this not rely on position
-          port: b.config.ports.metrics,
+          port: f.config.ports.metrics,
           path: '/-/healthy',
         },
       },
-      resources: if b.config.resources != {} then b.config.resources else {},
+      resources: if f.config.resources != {} then f.config.resources else {},
       volumeMounts: [{
         mountPath: '/config/',
         name: 'configs',
@@ -113,16 +107,16 @@ function(params) {
       apiVersion: 'apps/v1',
       kind: 'Deployment',
       metadata: {
-        name: b.config.name,
-        namespace: b.config.namespace,
-        labels: b.config.commonLabels,
+        name: f.config.name,
+        namespace: f.config.namespace,
+        labels: f.config.commonLabels,
       },
       spec: {
-        replicas: b.config.replicas,
-        selector: { matchLabels: b.config.podLabelSelector },
+        replicas: f.config.replicas,
+        selector: { matchLabels: f.config.podLabelSelector },
         template: {
           metadata: {
-            labels: b.config.commonLabels,
+            labels: f.config.commonLabels,
           },
           spec: {
             containers: [c],
@@ -130,12 +124,12 @@ function(params) {
             affinity: { podAntiAffinity: {
               preferredDuringSchedulingIgnoredDuringExecution: [{
                 podAffinityTerm: {
-                  namespaces: [b.config.namespace],
+                  namespaces: [f.config.namespace],
                   topologyKey: 'kubernetes.io/hostname',
                   labelSelector: { matchExpressions: [{
                     key: 'app.kubernetes.io/name',
                     operator: 'In',
-                    values: [b.deployment.metadata.labels['app.kubernetes.io/name']],
+                    values: [f.deployment.metadata.labels['app.kubernetes.io/name']],
                   }] },
                 },
                 weight: 100,
@@ -147,10 +141,10 @@ function(params) {
                 sources: [
                   {
                     configMap: {
-                      name: '%s' % b.config.name,
+                      name: '%s' % f.config.name,
                       items: [{
-                        key: '%s.jsonnet' % b.config.name,
-                        path: '%s.jsonnet' % b.config.name,
+                        key: '%s.jsonnet' % f.config.name,
+                        path: '%s.jsonnet' % f.config.name,
                       }],
                     },
                   },
@@ -171,17 +165,17 @@ function(params) {
       },
     },
 
-  serviceMonitor: if b.config.serviceMonitor == true then {
+  serviceMonitor: if f.config.serviceMonitor == true then {
     apiVersion: 'monitoring.coreos.com/v1',
     kind: 'ServiceMonitor',
     metadata+: {
-      name: b.config.name,
-      namespace: b.config.namespace,
-      labels: b.config.commonLabels,
+      name: f.config.name,
+      namespace: f.config.namespace,
+      labels: f.config.commonLabels,
     },
     spec: {
       selector: {
-        matchLabels: b.config.podLabelSelector,
+        matchLabels: f.config.podLabelSelector,
       },
       endpoints: [{ port: 'http' }],
     },
